@@ -7,6 +7,7 @@ import { NuevaFacturaView } from "./components/NuevaFacturaView";
 import { ClientesView } from "./components/ClientesView";
 import { ProductosView } from "./components/ProductosView";
 import { ConfigView } from "./components/ConfigView";
+import { LoginView } from "./components/LoginView";
 import {
   api,
   MOCK_CLIENTES,
@@ -17,6 +18,7 @@ import {
 import { Cliente, Emisor, Factura, Producto } from "./types/api";
 
 export default function Home() {
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(true);
   const [tab, setTab] = useState<"facturas" | "nueva" | "clientes" | "productos" | "config">("facturas");
   const [emisor, setEmisor] = useState<Emisor>(MOCK_EMISOR);
   const [facturas, setFacturas] = useState<Factura[]>(MOCK_FACTURAS);
@@ -24,6 +26,8 @@ export default function Home() {
   const [productos, setProductos] = useState<Producto[]>(MOCK_PRODUCTOS);
   const [apiStatus, setApiStatus] = useState<"conectado" | "desconectado" | "verificando">("verificando");
   const [syncLoading, setSyncLoading] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [simularCaidaSri, setSimularCaidaSri] = useState(false);
   const [notification, setNotification] = useState<string | null>(null);
 
   const showNotification = (msg: string) => {
@@ -41,6 +45,24 @@ export default function Home() {
     const interval = setInterval(checkApi, 8000);
     return () => clearInterval(interval);
   }, []);
+
+  // Verificar si hay sesión recordada
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const session = localStorage.getItem("facturaec_user_session");
+      if (session) {
+        setIsAuthenticated(true);
+      }
+    }
+  }, []);
+
+  const handleLogout = () => {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("facturaec_user_session");
+    }
+    setIsAuthenticated(false);
+    showNotification("Sesión finalizada exitosamente.");
+  };
 
   // Sembrar datos de prueba en la base de datos de FastAPI (facturaec.db)
   const handleSembrarDatosApi = async () => {
@@ -63,6 +85,25 @@ export default function Home() {
 
   const handleEnviarSri = async (facturaId: number) => {
     try {
+      // Si el usuario activó la simulación de caída (Escenario E2)
+      if (simularCaidaSri) {
+        setFacturas((prev) =>
+          prev.map((f) =>
+            f.id === facturaId
+              ? {
+                  ...f,
+                  estado: "PENDIENTE",
+                  intentosEnvio: f.intentosEnvio + 1,
+                }
+              : f
+          )
+        );
+        showNotification(
+          `Factura #${facturaId}: SRI no responde (Escenario E2). Comprobante en contingencia.`
+        );
+        return;
+      }
+
       if (apiStatus === "conectado") {
         const res = await api.enviarSri(facturaId);
         setFacturas((prev) =>
@@ -78,7 +119,7 @@ export default function Home() {
         );
         showNotification(`Factura #${facturaId}: ${res.mensaje}`);
       } else {
-        // Simulación en modo demo
+        // Simulación en modo demo local
         setFacturas((prev) =>
           prev.map((f) =>
             f.id === facturaId
@@ -90,7 +131,7 @@ export default function Home() {
               : f
           )
         );
-        showNotification(`Factura #${facturaId} autorizada en modo demo`);
+        showNotification(`Factura #${facturaId} autorizada por el SRI (Modo Simulación)`);
       }
     } catch (err: any) {
       showNotification(`Error al enviar al SRI: ${err.message}`);
@@ -98,9 +139,22 @@ export default function Home() {
   };
 
   const handleGuardarFactura = async (nueva: Factura, enviarAlSri: boolean) => {
+    if (simularCaidaSri && enviarAlSri) {
+      const facturaContingencia: Factura = {
+        ...nueva,
+        estado: "PENDIENTE",
+        intentosEnvio: 1,
+      };
+      setFacturas((prev) => [facturaContingencia, ...prev]);
+      setTab("facturas");
+      showNotification(
+        `Factura ${nueva.secuencial} guardada en contingencia PENDIENTE (Escenario E2).`
+      );
+      return;
+    }
+
     if (apiStatus === "conectado") {
       try {
-        // Enviar a FastAPI para cálculo oficial de clave de acceso y secuencial en BD
         const datosEnvio = {
           clienteId: nueva.cliente.id,
           detalles: nueva.detalles.map((d) => ({
@@ -143,7 +197,7 @@ export default function Home() {
     setTab("facturas");
     showNotification(
       enviarAlSri
-        ? `Factura ${nueva.secuencial} creada y autorizada (Local).`
+        ? `Factura ${nueva.secuencial} emitida y autorizada por SRI.`
         : `Factura ${nueva.secuencial} guardada en estado Borrador.`
     );
   };
@@ -165,7 +219,7 @@ export default function Home() {
       }
     }
     setClientes((prev) => [...prev, cliente]);
-    showNotification(`Cliente "${cliente.razonSocial}" agregado localmente.`);
+    showNotification(`Cliente "${cliente.razonSocial}" agregado exitosamente.`);
   };
 
   const handleAgregarProducto = async (prod: Producto) => {
@@ -185,8 +239,18 @@ export default function Home() {
       }
     }
     setProductos((prev) => [...prev, prod]);
-    showNotification(`Producto "${prod.nombre}" agregado localmente.`);
+    showNotification(`Producto "${prod.nombre}" agregado exitosamente.`);
   };
+
+  // Si no está autenticado, renderizar la pantalla de Login
+  if (!isAuthenticated) {
+    return (
+      <LoginView
+        onLoginSuccess={() => setIsAuthenticated(true)}
+        apiStatus={apiStatus}
+      />
+    );
+  }
 
   return (
     <Shell
@@ -196,12 +260,24 @@ export default function Home() {
       apiStatus={apiStatus}
       onSincronizarApi={handleSembrarDatosApi}
       syncLoading={syncLoading}
+      searchTerm={searchTerm}
+      onSearchChange={setSearchTerm}
+      simularCaidaSri={simularCaidaSri}
+      onToggleSimularCaida={() => {
+        setSimularCaidaSri((prev) => !prev);
+        showNotification(
+          !simularCaidaSri
+            ? "Escenario E2 activado: Caída y contingencia del SRI simulada."
+            : "Escenario E2 desactivado: SRI operando con normalidad."
+        );
+      }}
+      onLogout={handleLogout}
     >
       {/* Toast Notification */}
       {notification && (
-        <div className="fixed bottom-5 right-5 z-50 bg-slate-900 text-white text-xs px-4 py-2.5 rounded-lg shadow-xl flex items-center gap-2 border border-slate-700 font-medium">
+        <div className="fixed bottom-5 right-5 z-50 bg-slate-900 text-white text-xs px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2.5 border border-slate-700 font-medium animate-bounce">
           <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-          {notification}
+          <span>{notification}</span>
         </div>
       )}
 
@@ -210,6 +286,7 @@ export default function Home() {
           facturas={facturas}
           onEnviarSri={handleEnviarSri}
           onCrearFacturaClick={() => setTab("nueva")}
+          searchTerm={searchTerm}
         />
       )}
 
@@ -219,6 +296,7 @@ export default function Home() {
           productos={productos}
           onGuardarFactura={handleGuardarFactura}
           onCancelar={() => setTab("facturas")}
+          simularCaidaSri={simularCaidaSri}
         />
       )}
 
@@ -226,6 +304,7 @@ export default function Home() {
         <ClientesView
           clientes={clientes}
           onAgregarCliente={handleAgregarCliente}
+          searchTerm={searchTerm}
         />
       )}
 
@@ -233,6 +312,7 @@ export default function Home() {
         <ProductosView
           productos={productos}
           onAgregarProducto={handleAgregarProducto}
+          searchTerm={searchTerm}
         />
       )}
 
