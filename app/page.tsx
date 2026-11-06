@@ -138,8 +138,12 @@ export default function Home() {
     }
   };
 
-  const handleGuardarFactura = async (nueva: Factura, enviarAlSri: boolean) => {
-    if (simularCaidaSri && enviarAlSri) {
+  const handleGuardarFactura = async (
+    nueva: Factura,
+    enviarAlSri: boolean,
+    simularRechazo: boolean = false
+  ) => {
+    if (simularCaidaSri && enviarAlSri && !simularRechazo) {
       const facturaContingencia: Factura = {
         ...nueva,
         estado: "PENDIENTE",
@@ -155,20 +159,43 @@ export default function Home() {
 
     if (apiStatus === "conectado") {
       try {
-        const datosEnvio = {
+        const datosEnvio: any = {
           clienteId: nueva.cliente.id,
           detalles: nueva.detalles.map((d) => ({
             productoId: d.productoId,
             cantidad: d.cantidad,
           })),
         };
+        if (simularRechazo) {
+          datosEnvio.simular_rechazo = true;
+        }
 
         const resFactura = await api.crearFactura(datosEnvio);
         let estadoFinal = resFactura.estado;
 
         if (enviarAlSri) {
-          const resSri = await api.enviarSri(resFactura.id);
-          estadoFinal = resSri.estado;
+          try {
+            const resSri = await api.enviarSri(resFactura.id);
+            estadoFinal = resSri.estado;
+          } catch (errorSri: any) {
+            if (simularRechazo || errorSri.status === 422 || errorSri.codigo === "SRI_RECHAZO") {
+              estadoFinal = "RECHAZADA";
+              const facturaFinal: Factura = {
+                ...nueva,
+                id: resFactura.id,
+                secuencial: resFactura.numero || resFactura.secuencial || nueva.secuencial,
+                claveAcceso: resFactura.claveAcceso || resFactura.clave_acceso || nueva.claveAcceso,
+                estado: "RECHAZADA",
+              };
+              setFacturas((prev) => [facturaFinal, ...prev]);
+              setTab("facturas");
+              showNotification(
+                `SRI Rechazó el comprobante: ${errorSri.message || "Clave de acceso inválida (Módulo 11)."}`
+              );
+              return;
+            }
+            throw errorSri;
+          }
         }
 
         const facturaFinal: Factura = {
@@ -193,10 +220,16 @@ export default function Home() {
     }
 
     // Modo local / contingencia
-    setFacturas((prev) => [nueva, ...prev]);
+    const facturaLocal: Factura = {
+      ...nueva,
+      estado: simularRechazo ? "RECHAZADA" : nueva.estado,
+    };
+    setFacturas((prev) => [facturaLocal, ...prev]);
     setTab("facturas");
     showNotification(
-      enviarAlSri
+      simularRechazo
+        ? `Factura ${nueva.secuencial} RECHAZADA por el SRI (Clave de acceso inválida / Módulo 11).`
+        : enviarAlSri
         ? `Factura ${nueva.secuencial} emitida y autorizada por SRI.`
         : `Factura ${nueva.secuencial} guardada en estado Borrador.`
     );

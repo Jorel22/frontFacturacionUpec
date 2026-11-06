@@ -147,7 +147,10 @@ async function apiFetch<T>(endpoint: string, options: RequestInit = {}): Promise
 
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.detail || errorData.mensaje || `Error HTTP ${res.status}`);
+    const error: any = new Error(errorData.detail || errorData.mensaje || `Error HTTP ${res.status}`);
+    error.status = res.status;
+    error.codigo = errorData.codigo;
+    throw error;
   }
 
   return res.json();

@@ -6,7 +6,7 @@ import { Cliente, DetalleFactura, Factura, Producto, TarifaIva } from "../types/
 interface NuevaFacturaViewProps {
   clientes: Cliente[];
   productos: Producto[];
-  onGuardarFactura: (factura: Factura, enviarAlSri: boolean) => void;
+  onGuardarFactura: (factura: Factura, enviarAlSri: boolean, simularRechazo?: boolean) => void;
   onCancelar: () => void;
   simularCaidaSri?: boolean;
 }
@@ -84,7 +84,7 @@ export function NuevaFacturaView({
   const subtotalSinImpuestos = Number((subtotal15 + subtotal5 + subtotal0).toFixed(2));
   const totalFactura = Number((subtotalSinImpuestos + totalIva).toFixed(2));
 
-  const handleEmitir = (enviarAlSri: boolean) => {
+  const handleEmitir = (enviarAlSri: boolean, simularRechazo: boolean = false) => {
     setLoading(true);
     const timestamp = new Date().toISOString();
     const secNum = Math.floor(Math.random() * 900) + 100;
@@ -93,7 +93,11 @@ export function NuevaFacturaView({
     // Determinación de estado según simulación de contingencia E2 o normal
     let estadoInicial: Factura["estado"] = "CREADA";
     if (enviarAlSri) {
-      estadoInicial = simularCaidaSri ? "PENDIENTE" : "AUTORIZADA";
+      if (simularRechazo) {
+        estadoInicial = "RECHAZADA";
+      } else {
+        estadoInicial = simularCaidaSri ? "PENDIENTE" : "AUTORIZADA";
+      }
     }
 
     const nuevaFactura: Factura = {
@@ -111,7 +115,7 @@ export function NuevaFacturaView({
     };
 
     setTimeout(() => {
-      onGuardarFactura(nuevaFactura, enviarAlSri);
+      onGuardarFactura(nuevaFactura, enviarAlSri, simularRechazo);
       setLoading(false);
     }, 600);
   };
@@ -358,6 +362,14 @@ export function NuevaFacturaView({
           className="px-4 py-2 text-xs font-semibold text-slate-800 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg transition-colors cursor-pointer"
         >
           Guardar como Borrador
+        </button>
+        <button
+          disabled={loading}
+          onClick={() => handleEmitir(true, true)}
+          className="px-4 py-2 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-300 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
+          title="Envía una clave con dígito verificador inválido para forzar el estado RECHAZADA en SRI"
+        >
+          <span>⚠️ Probar Rechazo SRI</span>
         </button>
         <button
           disabled={loading}

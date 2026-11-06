@@ -76,6 +76,7 @@ export interface DetalleFacturaNuevo {
 export interface FacturaNueva {
   clienteId: number;
   detalles: DetalleFacturaNuevo[];
+  simular_rechazo?: boolean;
 }
 
 export interface Factura {

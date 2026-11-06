@@ -26,6 +26,7 @@ export function DashboardView({
   const autorizadas = facturas.filter((f) => f.estado === "AUTORIZADA").length;
   const pendientes = facturas.filter((f) => f.estado === "PENDIENTE").length;
   const borradores = facturas.filter((f) => f.estado === "CREADA").length;
+  const rechazadas = facturas.filter((f) => f.estado === "RECHAZADA").length;
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -453,7 +454,7 @@ export function DashboardView({
           <div className="flex items-center gap-2">
             {/* Filtros de estado */}
             <div className="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50 text-[11px] font-medium">
-              {(["TODOS", "AUTORIZADA", "PENDIENTE", "CREADA"] as const).map((est) => (
+              {(["TODOS", "AUTORIZADA", "PENDIENTE", "CREADA", "RECHAZADA"] as const).map((est) => (
                 <button
                   key={est}
                   onClick={() => setFilterState(est)}
@@ -469,6 +470,8 @@ export function DashboardView({
                     ? `Borradores (${borradores})`
                     : est === "PENDIENTE"
                     ? `Contingencia (${pendientes})`
+                    : est === "RECHAZADA"
+                    ? `Rechazadas (${rechazadas})`
                     : `Autorizadas (${autorizadas})`}
                 </button>
               ))}
