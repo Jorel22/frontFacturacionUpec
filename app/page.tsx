@@ -185,12 +185,14 @@ export default function Home() {
 
     if (apiStatus === "conectado") {
       try {
+        const clienteId = nueva.cliente?.id || (clientes.length > 0 ? clientes[0].id : 1);
+        const detallesEnvio = (nueva.detalles || []).map((d) => ({
+          productoId: d.productoId || (productos.length > 0 ? productos[0].id : 1),
+          cantidad: d.cantidad || 1,
+        }));
         const datosEnvio: any = {
-          clienteId: nueva.cliente.id,
-          detalles: nueva.detalles.map((d) => ({
-            productoId: d.productoId,
-            cantidad: d.cantidad,
-          })),
+          clienteId,
+          detalles: detallesEnvio,
         };
         if (simularRechazo) {
           datosEnvio.simular_rechazo = true;

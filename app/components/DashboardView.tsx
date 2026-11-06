@@ -4,6 +4,28 @@ import React, { useState } from "react";
 import Image from "next/image";
 import { Factura } from "../types/api";
 
+
+function toMoney(val: any): string {
+  const num = typeof val === "number" ? val : parseFloat(String(val || 0));
+  return isNaN(num) ? "0.00" : num.toFixed(2);
+}
+
+function toDateSafe(val: any): string {
+  if (!val) return "-";
+  try {
+    const d = new Date(val);
+    if (isNaN(d.getTime())) return "-";
+    return d.toLocaleDateString("es-EC", {
+      day: "2-digit",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return "-";
+  }
+}
+
 interface DashboardViewProps {
   facturas: Factura[];
   onEnviarSri: (facturaId: number) => void;
@@ -21,12 +43,13 @@ export function DashboardView({
   const [copiedKey, setCopiedKey] = useState(false);
   const [filterState, setFilterState] = useState<string>("TODOS");
 
-  const totalFacturado = facturas.reduce((acc, f) => acc + f.total, 0);
-  const totalIva = facturas.reduce((acc, f) => acc + f.totalIva, 0);
-  const autorizadas = facturas.filter((f) => f.estado === "AUTORIZADA").length;
-  const pendientes = facturas.filter((f) => f.estado === "PENDIENTE").length;
-  const borradores = facturas.filter((f) => f.estado === "CREADA").length;
-  const rechazadas = facturas.filter((f) => f.estado === "RECHAZADA").length;
+  const facturasList = facturas || [];
+  const totalFacturado = facturasList.reduce((acc, f) => acc + (Number(f?.total) || 0), 0);
+  const totalIva = facturasList.reduce((acc, f) => acc + (Number(f?.totalIva) || 0), 0);
+  const autorizadas = facturasList.filter((f) => f?.estado === "AUTORIZADA").length;
+  const pendientes = facturasList.filter((f) => f?.estado === "PENDIENTE").length;
+  const borradores = facturasList.filter((f) => f?.estado === "CREADA").length;
+  const rechazadas = facturasList.filter((f) => f?.estado === "RECHAZADA").length;
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -34,16 +57,17 @@ export function DashboardView({
     setTimeout(() => setCopiedKey(false), 2000);
   };
 
-  const facturasFiltradas = facturas.filter((f) => {
+  const facturasFiltradas = facturasList.filter((f) => {
+    if (!f) return false;
     const matchFilter = filterState === "TODOS" || f.estado === filterState;
     if (!matchFilter) return false;
     if (!searchTerm || !searchTerm.trim()) return true;
     const q = searchTerm.toLowerCase().trim();
     return (
-      f.secuencial.toLowerCase().includes(q) ||
-      f.claveAcceso.toLowerCase().includes(q) ||
-      f.cliente.razonSocial.toLowerCase().includes(q) ||
-      f.cliente.rucCedula.toLowerCase().includes(q)
+      (f.secuencial || "").toLowerCase().includes(q) ||
+      (f.claveAcceso || "").toLowerCase().includes(q) ||
+      (f.cliente?.razonSocial || "").toLowerCase().includes(q) ||
+      (f.cliente?.rucCedula || "").toLowerCase().includes(q)
     );
   });
 
@@ -52,28 +76,36 @@ export function DashboardView({
     const fechaStr = `${String(fecha.getDate()).padStart(2, "0")}/${String(fecha.getMonth() + 1).padStart(2, "0")}/${fecha.getFullYear()}`;
     const secuencialLimpio = factura.secuencial.replace(/-/g, "").slice(-9);
 
-    const detallesXml = factura.detalles
+    const detallesXml = (factura.detalles || [])
       .map(
         (d) => `
     <detalle>
-      <codigoPrincipal>${d.codigo}</codigoPrincipal>
-      <descripcion>${d.nombre}</descripcion>
-      <cantidad>${d.cantidad}</cantidad>
-      <precioUnitario>${d.precioUnitario.toFixed(2)}</precioUnitario>
+      <codigoPrincipal>${d?.codigo || "PRD"}</codigoPrincipal>
+      <descripcion>${d?.nombre || "Producto"}</descripcion>
+      <cantidad>${d?.cantidad ?? 1}</cantidad>
+      <precioUnitario>${toMoney(d?.precioUnitario)}</precioUnitario>
       <descuento>0.00</descuento>
-      <precioTotalSinImpuesto>${d.subtotal.toFixed(2)}</precioTotalSinImpuesto>
+      <precioTotalSinImpuesto>${toMoney(d?.subtotal)}</precioTotalSinImpuesto>
       <impuestos>
         <impuesto>
           <codigo>2</codigo>
-          <codigoPorcentaje>${d.tarifaIva === 15 ? "4" : d.tarifaIva === 5 ? "5" : "0"}</codigoPorcentaje>
-          <tarifa>${d.tarifaIva}.00</tarifa>
-          <baseImponible>${d.subtotal.toFixed(2)}</baseImponible>
-          <valor>${d.valorIva.toFixed(2)}</valor>
+          <codigoPorcentaje>${d?.tarifaIva === 15 ? "4" : d?.tarifaIva === 5 ? "5" : "0"}</codigoPorcentaje>
+          <tarifa>${d?.tarifaIva ?? 15}.00</tarifa>
+          <baseImponible>${toMoney(d?.subtotal)}</baseImponible>
+          <valor>${toMoney(d?.valorIva)}</valor>
         </impuesto>
       </impuestos>
     </detalle>`
       )
       .join("");
+
+    const rucCedula = factura.cliente?.rucCedula || "9999999999999";
+    const razonSocial = factura.cliente?.razonSocial || "Consumidor Final";
+    const correo = factura.cliente?.correo || "consumidor@final.ec";
+    const direccion = factura.cliente?.direccion || "N/A";
+    const subtotalStr = toMoney(factura.subtotalSinImpuestos);
+    const ivaStr = toMoney(factura.totalIva);
+    const totalStr = toMoney(factura.total);
 
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <factura id="comprobante" version="2.1.0">
@@ -82,7 +114,7 @@ export function DashboardView({
     <tipoEmision>1</tipoEmision>
     <razonSocial>SOLUCIONES ANDINAS S.A.S.</razonSocial>
     <ruc>1792952327001</ruc>
-    <claveAcceso>${factura.claveAcceso}</claveAcceso>
+    <claveAcceso>${factura.claveAcceso || ""}</claveAcceso>
     <codDoc>01</codDoc>
     <estab>001</estab>
     <ptoEmi>001</ptoEmi>
@@ -92,28 +124,28 @@ export function DashboardView({
   <infoFactura>
     <fechaEmision>${fechaStr}</fechaEmision>
     <dirEstablecimiento>Av. Amazonas N24-196 y Luis Cordero, Quito, Ecuador</dirEstablecimiento>
-    <tipoIdentificacionComprador>${factura.cliente.rucCedula.length === 13 ? "04" : "05"}</tipoIdentificacionComprador>
-    <razonSocialComprador>${factura.cliente.razonSocial}</razonSocialComprador>
-    <identificacionComprador>${factura.cliente.rucCedula}</identificacionComprador>
-    <totalSinImpuestos>${factura.subtotalSinImpuestos.toFixed(2)}</totalSinImpuestos>
+    <tipoIdentificacionComprador>${rucCedula.length === 13 ? "04" : "05"}</tipoIdentificacionComprador>
+    <razonSocialComprador>${razonSocial}</razonSocialComprador>
+    <identificacionComprador>${rucCedula}</identificacionComprador>
+    <totalSinImpuestos>${subtotalStr}</totalSinImpuestos>
     <totalDescuento>0.00</totalDescuento>
     <totalConImpuestos>
       <totalImpuesto>
         <codigo>2</codigo>
         <codigoPorcentaje>4</codigoPorcentaje>
-        <baseImponible>${factura.subtotalSinImpuestos.toFixed(2)}</baseImponible>
-        <valor>${factura.totalIva.toFixed(2)}</valor>
+        <baseImponible>${subtotalStr}</baseImponible>
+        <valor>${ivaStr}</valor>
       </totalImpuesto>
     </totalConImpuestos>
     <propina>0.00</propina>
-    <importeTotal>${factura.total.toFixed(2)}</importeTotal>
+    <importeTotal>${totalStr}</importeTotal>
     <moneda>DOLAR</moneda>
   </infoFactura>
   <detalles>${detallesXml}
   </detalles>
   <infoAdicional>
-    <campoAdicional nombre="Email">${factura.cliente.correo}</campoAdicional>
-    <campoAdicional nombre="Direccion">${factura.cliente.direccion || "N/A"}</campoAdicional>
+    <campoAdicional nombre="Email">${correo}</campoAdicional>
+    <campoAdicional nombre="Direccion">${direccion}</campoAdicional>
   </infoAdicional>
 </factura>`;
 
@@ -207,14 +239,14 @@ export function DashboardView({
   <!-- Datos del Comprador -->
   <div class="box" style="margin-bottom: 15px;">
     <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 8px;">
-      <div><strong>Razón Social / Nombres y Apellidos:</strong> ${factura.cliente.razonSocial}</div>
-      <div><strong>Identificación (RUC/Cédula):</strong> ${factura.cliente.rucCedula}</div>
+      <div><strong>Razón Social / Nombres y Apellidos:</strong> ${factura.cliente?.razonSocial || "Consumidor Final"}</div>
+      <div><strong>Identificación (RUC/Cédula):</strong> ${factura.cliente?.rucCedula || "9999999999999"}</div>
     </div>
     <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 8px; margin-top: 6px;">
-      <div><strong>Dirección Comprador:</strong> ${factura.cliente.direccion || "N/A"}</div>
+      <div><strong>Dirección Comprador:</strong> ${factura.cliente?.direccion || "N/A"}</div>
       <div><strong>Fecha de Emisión:</strong> ${fecha}</div>
     </div>
-    <div style="margin-top: 6px;"><strong>Correo Notificación Electrónica:</strong> ${factura.cliente.correo}</div>
+    <div style="margin-top: 6px;"><strong>Correo Notificación Electrónica:</strong> ${factura.cliente?.correo || "consumidor@final.ec"}</div>
   </div>
 
   <!-- Tabla de Detalles -->
@@ -231,17 +263,17 @@ export function DashboardView({
       </tr>
     </thead>
     <tbody>
-      ${factura.detalles
+      ${(factura.detalles || [])
         .map(
           (d) => `
         <tr>
-          <td class="mono">${d.codigo}</td>
-          <td>${d.nombre}</td>
-          <td class="center">${d.cantidad}</td>
-          <td class="right mono">$${d.precioUnitario.toFixed(2)}</td>
+          <td class="mono">${d?.codigo || "PRD"}</td>
+          <td>${d?.nombre || "Producto"}</td>
+          <td class="center">${d?.cantidad ?? 1}</td>
+          <td class="right mono">$${toMoney(d?.precioUnitario)}</td>
           <td class="right mono">$0.00</td>
-          <td class="center mono">${d.tarifaIva}%</td>
-          <td class="right mono font-semibold">$${d.total.toFixed(2)}</td>
+          <td class="center mono">${d?.tarifaIva ?? 15}%</td>
+          <td class="right mono font-semibold">$${toMoney(d?.total)}</td>
         </tr>`
         )
         .join("")}
@@ -523,32 +555,27 @@ export function DashboardView({
                     }`}
                   >
                     <td className="py-3 px-4 font-mono font-semibold text-slate-900">
-                      {f.secuencial}
+                      {f.secuencial || `FAC-${f.id}`}
                     </td>
                     <td className="py-3 px-4 text-slate-500 whitespace-nowrap">
-                      {new Date(f.fechaEmision).toLocaleDateString("es-EC", {
-                        day: "2-digit",
-                        month: "short",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
+                      {toDateSafe(f.fechaEmision)}
                     </td>
                     <td className="py-3 px-4">
                       <div className="font-medium text-slate-900 truncate max-w-[200px]">
-                        {f.cliente.razonSocial}
+                        {f.cliente?.razonSocial || "Consumidor Final"}
                       </div>
                       <div className="font-mono text-[11px] text-slate-400">
-                        {f.cliente.rucCedula}
+                        {f.cliente?.rucCedula || "9999999999999"}
                       </div>
                     </td>
                     <td className="py-3 px-4 text-right font-mono text-slate-600">
-                      ${f.subtotalSinImpuestos.toFixed(2)}
+                      ${toMoney(f.subtotalSinImpuestos)}
                     </td>
                     <td className="py-3 px-4 text-right font-mono text-slate-400">
-                      ${f.totalIva.toFixed(2)}
+                      ${toMoney(f.totalIva)}
                     </td>
                     <td className="py-3 px-4 text-right font-mono font-bold text-slate-900">
-                      ${f.total.toFixed(2)}
+                      ${toMoney(f.total)}
                     </td>
                     <td className="py-3 px-4 text-center whitespace-nowrap">
                       {getStatusBadge(f.estado)}
@@ -635,15 +662,15 @@ export function DashboardView({
                 <div className="grid grid-cols-2 gap-2 text-[11px]">
                   <div>
                     <span className="text-slate-400 block">Razón Social:</span>
-                    <span className="font-medium text-slate-800">{selectedFactura.cliente.razonSocial}</span>
+                    <span className="font-medium text-slate-800">{selectedFactura.cliente?.razonSocial || "Consumidor Final"}</span>
                   </div>
                   <div>
                     <span className="text-slate-400 block">RUC / Cédula:</span>
-                    <span className="font-mono font-medium text-slate-800">{selectedFactura.cliente.rucCedula}</span>
+                    <span className="font-mono font-medium text-slate-800">{selectedFactura.cliente?.rucCedula || "9999999999999"}</span>
                   </div>
                   <div className="col-span-2">
                     <span className="text-slate-400 block">Correo para RIDE:</span>
-                    <span className="text-slate-700">{selectedFactura.cliente.correo}</span>
+                    <span className="text-slate-700">{selectedFactura.cliente?.correo || "consumidor@final.ec"}</span>
                   </div>
                 </div>
               </div>
@@ -654,19 +681,23 @@ export function DashboardView({
                   Detalle de Ítems
                 </div>
                 <div className="divide-y divide-slate-100 border border-slate-200/80 rounded-xl overflow-hidden bg-white">
-                  {selectedFactura.detalles.map((d, i) => (
-                    <div key={i} className="p-3 flex items-center justify-between text-[11px]">
-                      <div>
-                        <div className="font-medium text-slate-800">{d.nombre}</div>
-                        <div className="text-slate-400 font-mono text-[10px]">
-                          {d.codigo} · {d.cantidad} x ${d.precioUnitario.toFixed(2)} (IVA {d.tarifaIva}%)
+                  {(selectedFactura.detalles || []).length === 0 ? (
+                    <div className="p-4 text-center text-slate-400 italic">Sin ítems detallados</div>
+                  ) : (
+                    (selectedFactura.detalles || []).map((d, i) => (
+                      <div key={i} className="p-3 flex items-center justify-between text-[11px]">
+                        <div>
+                          <div className="font-medium text-slate-800">{d?.nombre || `Ítem #${i + 1}`}</div>
+                          <div className="text-slate-400 font-mono text-[10px]">
+                            {d?.codigo || "PRD"} · {d?.cantidad ?? 1} x ${toMoney(d?.precioUnitario)} (IVA {d?.tarifaIva ?? 15}%)
+                          </div>
+                        </div>
+                        <div className="font-mono font-bold text-slate-900">
+                          ${toMoney(d?.total)}
                         </div>
                       </div>
-                      <div className="font-mono font-bold text-slate-900">
-                        ${d.total.toFixed(2)}
-                      </div>
-                    </div>
-                  ))}
+                    ))
+                  )}
                 </div>
               </div>
 
@@ -674,15 +705,15 @@ export function DashboardView({
               <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200/80 space-y-1.5 font-mono text-[11px]">
                 <div className="flex justify-between text-slate-600">
                   <span>Subtotal Sin Impuestos:</span>
-                  <span>${selectedFactura.subtotalSinImpuestos.toFixed(2)}</span>
+                  <span>${toMoney(selectedFactura.subtotalSinImpuestos)}</span>
                 </div>
                 <div className="flex justify-between text-slate-600">
                   <span>Total IVA:</span>
-                  <span>${selectedFactura.totalIva.toFixed(2)}</span>
+                  <span>${toMoney(selectedFactura.totalIva)}</span>
                 </div>
                 <div className="flex justify-between text-slate-900 font-bold border-t border-slate-200 pt-2 text-sm">
                   <span>TOTAL A PAGAR:</span>
-                  <span>${selectedFactura.total.toFixed(2)} USD</span>
+                  <span>${toMoney(selectedFactura.total)} USD</span>
                 </div>
               </div>
             </div>

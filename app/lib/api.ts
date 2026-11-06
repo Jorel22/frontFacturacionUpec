@@ -13,6 +13,13 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 let cachedToken: string | null = null;
 
+export function clearAuthToken() {
+  cachedToken = null;
+  if (typeof window !== "undefined") {
+    localStorage.removeItem("facturaec_token");
+  }
+}
+
 export function setAuthToken(token: string) {
   cachedToken = token;
   if (typeof window !== "undefined") {
@@ -53,6 +60,9 @@ async function apiFetch<T>(endpoint: string, options: RequestInit = {}): Promise
   });
 
   if (!res.ok) {
+    if (res.status === 401) {
+      clearAuthToken();
+    }
     const errorData = await res.json().catch(() => ({}));
     const error: any = new Error(errorData.detail || errorData.mensaje || `Error HTTP ${res.status}`);
     error.status = res.status;
