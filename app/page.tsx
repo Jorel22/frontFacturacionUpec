@@ -21,9 +21,9 @@ export default function Home() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(true);
   const [tab, setTab] = useState<"facturas" | "nueva" | "clientes" | "productos" | "config">("facturas");
   const [emisor, setEmisor] = useState<Emisor>(MOCK_EMISOR);
-  const [facturas, setFacturas] = useState<Factura[]>(MOCK_FACTURAS);
-  const [clientes, setClientes] = useState<Cliente[]>(MOCK_CLIENTES);
-  const [productos, setProductos] = useState<Producto[]>(MOCK_PRODUCTOS);
+  const [facturas, setFacturas] = useState<Factura[]>([]);
+  const [clientes, setClientes] = useState<Cliente[]>([]);
+  const [productos, setProductos] = useState<Producto[]>([]);
   const [apiStatus, setApiStatus] = useState<"conectado" | "desconectado" | "verificando">("verificando");
   const [syncLoading, setSyncLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -35,7 +35,7 @@ export default function Home() {
     setTimeout(() => setNotification(null), 4000);
   };
 
-  // Verificar estado del backend FastAPI en localhost:8000
+  // Verificar estado del backend FastAPI y cargar datos reales desde la BD
   useEffect(() => {
     async function checkApi() {
       const ok = await api.verificarSalud();
@@ -45,6 +45,30 @@ export default function Home() {
     const interval = setInterval(checkApi, 8000);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    async function cargarDatosReales() {
+      if (apiStatus === "conectado") {
+        setSyncLoading(true);
+        try {
+          const [cList, pList] = await Promise.all([
+            api.listarClientes().catch(() => []),
+            api.listarProductos().catch(() => []),
+          ]);
+          setClientes(cList);
+          setProductos(pList);
+
+          const fList = await api.listarFacturas(cList).catch(() => []);
+          setFacturas(fList);
+        } catch (err: any) {
+          console.warn("Error al sincronizar datos desde PostgreSQL:", err);
+        } finally {
+          setSyncLoading(false);
+        }
+      }
+    }
+    cargarDatosReales();
+  }, [apiStatus]);
 
   // Verificar si hay sesión recordada
   useEffect(() => {
@@ -64,10 +88,10 @@ export default function Home() {
     showNotification("Sesión finalizada exitosamente.");
   };
 
-  // Sembrar datos de prueba en la base de datos de FastAPI (facturaec.db)
+  // Sembrar datos de prueba en la base de datos de FastAPI / PostgreSQL
   const handleSembrarDatosApi = async () => {
     if (apiStatus !== "conectado") {
-      showNotification("La API no está disponible en http://localhost:8000");
+      showNotification("La API no está conectada en este momento.");
       return;
     }
     setSyncLoading(true);
@@ -75,6 +99,8 @@ export default function Home() {
       const res = await api.sembrarDatosEnBackend();
       setClientes(res.clientes);
       setProductos(res.productos);
+      const fList = await api.listarFacturas(res.clientes).catch(() => []);
+      setFacturas(fList);
       showNotification("¡Datos iniciales sembrados con éxito en la base de datos de FastAPI!");
     } catch (err: any) {
       showNotification(`Aviso: ${err.message || "Error al sembrar datos"}`);

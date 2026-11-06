@@ -35,102 +35,9 @@ export const MOCK_EMISOR: Emisor = {
   correo: "facturacion@andinassoft.ec",
 };
 
-export const MOCK_CLIENTES: Cliente[] = [
-  {
-    id: 1,
-    rucCedula: "1722849102001",
-    razonSocial: "COMERCIAL LA MODERNA S.A.",
-    correo: "contabilidad@lamoderna.ec",
-    direccion: "Av. 10 de Agosto N34-11, Quito",
-    telefono: "022549102",
-  },
-  {
-    id: 2,
-    rucCedula: "1003481920",
-    razonSocial: "CARLOS ANDRES MORENO MORA",
-    correo: "carlos.moreno@gmail.com",
-    direccion: "Calle Bolívar 4-50, Tulcán",
-    telefono: "0993819201",
-  },
-  {
-    id: 3,
-    rucCedula: "0401829103001",
-    razonSocial: "DISTRIBUIDORA DEL CARCHI CIA. LTDA.",
-    correo: "ventas@districarchi.ec",
-    direccion: "Panamericana Norte Km 2, Tulcán",
-    telefono: "062981023",
-  },
-];
-
-export const MOCK_PRODUCTOS: Producto[] = [
-  {
-    id: 1,
-    codigo: "SRV-SFT-01",
-    nombre: "Suscripción Mensual SaaS FacturaEC",
-    precioUnitario: 35.0,
-    tarifaIva: 15,
-  },
-  {
-    id: 2,
-    codigo: "SRV-SPT-02",
-    nombre: "Soporte Técnico y Mantenimiento Tributario",
-    precioUnitario: 50.0,
-    tarifaIva: 15,
-  },
-  {
-    id: 3,
-    codigo: "INS-FIR-03",
-    nombre: "Asesoría en Firma Electrónica y Certificado",
-    precioUnitario: 25.0,
-    tarifaIva: 0,
-  },
-  {
-    id: 4,
-    codigo: "MAT-IMP-04",
-    nombre: "Papel Químico Térmico para Impresión RIDE",
-    precioUnitario: 12.5,
-    tarifaIva: 5,
-  },
-];
-
-export const MOCK_FACTURAS: Factura[] = [
-  {
-    id: 1,
-    secuencial: "001-001-000000042",
-    claveAcceso: "0211202601179295232700120010010000000421234567819",
-    fechaEmision: "2026-11-02T14:30:00Z",
-    estado: "AUTORIZADA",
-    cliente: MOCK_CLIENTES[0],
-    subtotalSinImpuestos: 120.0,
-    totalIva: 18.0,
-    total: 138.0,
-    intentosEnvio: 1,
-    detalles: [
-      {
-        productoId: 1,
-        codigo: "SRV-SFT-01",
-        nombre: "Suscripción Mensual SaaS FacturaEC",
-        cantidad: 2,
-        precioUnitario: 35.0,
-        tarifaIva: 15,
-        subtotal: 70.0,
-        valorIva: 10.5,
-        total: 80.5,
-      },
-      {
-        productoId: 2,
-        codigo: "SRV-SPT-02",
-        nombre: "Soporte Técnico y Mantenimiento Tributario",
-        cantidad: 1,
-        precioUnitario: 50.0,
-        tarifaIva: 15,
-        subtotal: 50.0,
-        valorIva: 7.5,
-        total: 57.5,
-      },
-    ],
-  },
-];
+export const MOCK_CLIENTES: Cliente[] = [];
+export const MOCK_PRODUCTOS: Producto[] = [];
+export const MOCK_FACTURAS: Factura[] = [];
 
 async function apiFetch<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const token = getAuthToken();
@@ -227,6 +134,69 @@ export const api = {
       precioUnitario: parseFloat(res.precioUnitario),
       tarifaIva: res.tarifaIva,
     };
+  },
+
+  async listarClientes(): Promise<Cliente[]> {
+    const list = await apiFetch<any[]>("/api/v1/clientes");
+    return list.map((res) => ({
+      id: res.id,
+      rucCedula: res.identificacion,
+      razonSocial: res.razonSocial || res.razon_social,
+      correo: "contacto@" + (res.identificacion || "cliente").slice(0, 8) + ".ec",
+      direccion: res.direccion || "",
+    }));
+  },
+
+  async listarProductos(): Promise<Producto[]> {
+    const list = await apiFetch<any[]>("/api/v1/productos");
+    return list.map((res) => ({
+      id: res.id,
+      codigo: res.codigo,
+      nombre: res.descripcion,
+      precioUnitario: parseFloat(res.precioUnitario || res.precio_unitario || "0"),
+      tarifaIva: res.tarifaIva ?? res.tarifa_iva ?? 15,
+    }));
+  },
+
+  async listarFacturas(clientesList: Cliente[] = []): Promise<Factura[]> {
+    const list = await apiFetch<any[]>("/api/v1/facturas");
+    const clientesMap = new Map<number, Cliente>(clientesList.map((c) => [c.id, c]));
+
+    return list.map((f) => {
+      const clienteEncontrado = clientesMap.get(f.cliente_id || f.clienteId) || {
+        id: f.cliente_id || f.clienteId || 0,
+        rucCedula: "Consumidor Final",
+        razonSocial: "Cliente #" + (f.cliente_id || f.clienteId || 0),
+        correo: "",
+        direccion: "",
+      };
+
+      const detalles: DetalleFactura[] = (f.detalles || []).map((d: any, idx: number) => ({
+        productoId: d.producto_id || d.productoId || idx + 1,
+        codigo: `PRD-${d.producto_id || d.productoId || idx + 1}`,
+        nombre: d.descripcion || "Producto",
+        cantidad: d.cantidad,
+        precioUnitario: parseFloat(d.precio_unitario || d.precioUnitario || "0"),
+        tarifaIva: d.tarifa_iva ?? d.tarifaIva ?? 15,
+        subtotal: parseFloat(d.subtotal || "0"),
+        valorIva: parseFloat(d.iva || "0"),
+        total: parseFloat(d.subtotal || "0") + parseFloat(d.iva || "0"),
+      }));
+
+      return {
+        id: f.id,
+        secuencial: f.numero || `001-001-${String(f.secuencial || f.id).padStart(9, "0")}`,
+        claveAcceso: f.clave_acceso || f.claveAcceso || "",
+        fechaEmision: f.fecha_emision || f.fechaEmision || new Date().toISOString(),
+        estado: f.estado,
+        cliente: clienteEncontrado,
+        subtotalSinImpuestos: parseFloat(f.subtotal || "0"),
+        totalIva: parseFloat(f.iva || "0"),
+        total: parseFloat(f.total || "0"),
+        intentosEnvio: f.intentos_envio ?? f.intentosEnvio ?? 1,
+        detalles,
+      };
+    });
   },
 
   async crearFactura(data: FacturaNueva): Promise<any> {

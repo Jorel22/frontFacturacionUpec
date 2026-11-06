@@ -23,13 +23,28 @@ export function NuevaFacturaView({
   onCancelar,
   simularCaidaSri = false,
 }: NuevaFacturaViewProps) {
-  const [selectedClienteId, setSelectedClienteId] = useState<number>(clientes[0]?.id || 1);
+  const fallbackCliente: Cliente = {
+    id: 0,
+    rucCedula: "9999999999999",
+    razonSocial: "Consumidor Final (Sin clientes en BD)",
+    correo: "consumidor@final.ec",
+    direccion: "Ecuador",
+  };
+  const fallbackProducto: Producto = {
+    id: 0,
+    codigo: "PRD-01",
+    nombre: "Servicio General (Sin productos en BD)",
+    precioUnitario: 10.0,
+    tarifaIva: 15,
+  };
+
+  const [selectedClienteId, setSelectedClienteId] = useState<number>(clientes[0]?.id || 0);
   const [items, setItems] = useState<ItemDraft[]>([
-    { productoId: productos[0]?.id || 1, cantidad: 1 },
+    { productoId: productos[0]?.id || 0, cantidad: 1 },
   ]);
   const [loading, setLoading] = useState(false);
 
-  const clienteSeleccionado = clientes.find((c) => c.id === selectedClienteId) || clientes[0];
+  const clienteSeleccionado = clientes.find((c) => c.id === selectedClienteId) || clientes[0] || fallbackCliente;
 
   const handleAddItem = () => {
     setItems((prev) => [...prev, { productoId: productos[0]?.id || 1, cantidad: 1 }]);
@@ -48,7 +63,7 @@ export function NuevaFacturaView({
 
   // Cálculos tributarios en tiempo real según la normativa del SRI
   const detallesCalculados: DetalleFactura[] = items.map((item) => {
-    const prod = productos.find((p) => p.id === item.productoId) || productos[0];
+    const prod = productos.find((p) => p.id === item.productoId) || productos[0] || fallbackProducto;
     const subtotal = Number((prod.precioUnitario * item.cantidad).toFixed(2));
     const valorIva = Number(((subtotal * prod.tarifaIva) / 100).toFixed(2));
     const total = Number((subtotal + valorIva).toFixed(2));
